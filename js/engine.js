@@ -64,7 +64,7 @@ var Engine = (function(global) {
      * game loop.
      */
     function init() {
-        reset();
+        //reset(); not used
         lastTime = Date.now();
         main();
     }
@@ -80,7 +80,9 @@ var Engine = (function(global) {
      */
     function update(dt) {
         updateEntities(dt);
-        // checkCollisions();
+        checkCollisions();
+        checkGrabables();
+        checkLives();
     }
 
     /* This is called by the update function  and loops through all of the
@@ -95,7 +97,71 @@ var Engine = (function(global) {
             enemy.update(dt);
         });
         player.update();
+        gem.update();
+        heart.update();
+        game.inc_time_playing();
+        if (game.get_time_playing() % 3000 === 0 && allEnemies.length < 20) {
+            allEnemies.push(new Enemy());
+        }
+        if (game.get_time_playing() < 3000 && allEnemies.length > 5) {
+            allEnemies.pop();
+        }
     }
+
+
+    /* This function checks if any bugs collide with player.
+     * It calls the dist function, which calculates the distance between two objects
+     */
+    function checkCollisions() {
+        allEnemies.forEach(function(enemy) {
+            var x_dist = Math.abs(enemy.get_loc()[0] - player.get_loc()[0]);
+            var y_dist = Math.abs(enemy.get_loc()[1] - player.get_loc()[1]);
+            if (x_dist < 80 && y_dist < 60) {
+                enemy.turn_around();
+                player.die();
+            }
+        });
+    }
+
+    // Function checks to see if there is anything to grab
+    function checkGrabables() {
+
+        // gems
+        var x_dist = Math.abs(gem.get_loc()[0] - player.get_loc()[0]);
+        var y_dist = Math.abs(gem.get_loc()[1] - player.get_loc()[1]);
+        if (x_dist < 80 && y_dist < 60) {
+            player.grab('gem');
+            gem.spawn();
+        }
+
+        // hearts
+        var x_dist = Math.abs(heart.get_loc()[0] - player.get_loc()[0]);
+        var y_dist = Math.abs(heart.get_loc()[1] - player.get_loc()[1]);
+        if (x_dist < 80 && y_dist < 60) {
+            player.grab('heart');
+            heart.spawn();
+        }
+
+        // make sure no gems or hearts are spawned on top of each other
+        var x_dist = Math.abs(gem.get_loc()[0] - heart.get_loc()[0]);
+        var y_dist = Math.abs(gem.get_loc()[1] - heart.get_loc()[1]);
+        if (x_dist < 80 && y_dist < 60) {
+            if (game.get_last_grab() === 'gem') {
+                heart.spawn();
+            } else {
+                gem.spawn();
+            }
+        }
+    }
+
+    // check how many lives player has
+    function checkLives() {
+        if (game.get_lives() <= 0) {
+            game.set_game_on(false);
+        }
+    }
+
+
 
     /* This function initially draws the "game level", it will then call
      * the renderEntities function. Remember, this function is called every
@@ -136,8 +202,48 @@ var Engine = (function(global) {
             }
         }
 
+        // render the score board
+        ctx.font = '14pt calibri';
+        ctx.fillStyle = 'darkblue';
+        ctx.fillText('Lives: ' + game.get_lives(), 10 + 0*TILE[0], 570);
+        ctx.fillText('Score: ' + game.get_score(), 10 + 1*TILE[0], 570);
+        ctx.fillText('Across: ' + game.get_crossed(), 10 + 2*TILE[0], 570);
+        ctx.fillText('Gems: ' + game.get_gems_grabbed(), 10 + 3*TILE[0], 570);
+        ctx.fillText('Hearts: ' + game.get_hearts_grabbed(), 10 + 4*TILE[0], 570);
 
-        renderEntities();
+
+        /*
+        Check if the game is still on.
+        If the game is on, the renderEntities function is called, which renders the game objects.
+        If it is not and, thus, the game is over or not started, the message is
+        displayed. This message gives instructions how to play and start the game.
+         */
+        if (game.get_game_on()) {
+            renderEntities();
+        } else {
+            /*
+            Game message. I used TILEs as a location reference rather than just pixels.
+            If there is an offset, it is added.
+             */
+            ctx.beginPath();
+            ctx.rect(1*TILE[0],  1*TILE[1] + 50, 3*TILE[0], 4*TILE[1]);
+            ctx.fillStyle = '#FFF';
+            ctx.fill();
+            ctx.lineWidth = 7;
+            ctx.strokeStyle = '#66C';
+            ctx.stroke();
+            ctx.fillStyle = 'darkred';
+            if (game.get_lives() === 0) {
+                ctx.fillText('GAME OVER. PLAY AGAIN!', 1*TILE[0] + 20, 2*TILE[1] + 30);
+            } else {
+                ctx.fillText('PLAY THE GAME!', 2*TILE[0] - 30, 2*TILE[1] + 30);
+            }
+            ctx.fillText('The game is simple. You start with', 1*TILE[0] + 10, 3*TILE[1]);
+            ctx.fillText('9 lives. Grab a heart, gain 1 life.', 1*TILE[0] + 10, 3*TILE[1] + 40);
+            ctx.fillText('Grab a gem or cross to the water,', 1*TILE[0] + 10, 3*TILE[1] + 80);
+            ctx.fillText('gain 1 point. Use arrow keys to move.', 1*TILE[0] + 10, 3*TILE[1] + 120);
+            ctx.fillText('Click the screen to start the game.', 1*TILE[0] + 10, 3*TILE[1] + 160);
+        }
     }
 
     /* This function is called by the render function and is called on each game
@@ -145,6 +251,13 @@ var Engine = (function(global) {
      * on your enemy and player entities within app.js
      */
     function renderEntities() {
+
+        // render gem
+        gem.render();
+
+        // render heart
+        heart.render();
+
         /* Loop through all of the objects within the allEnemies array and call
          * the render function you have defined.
          */
@@ -152,6 +265,7 @@ var Engine = (function(global) {
             enemy.render();
         });
 
+        // render player
         player.render();
     }
 
@@ -159,9 +273,12 @@ var Engine = (function(global) {
      * handle game reset states - maybe a new game menu or a game over screen
      * those sorts of things. It's only called once by the init() method.
      */
+    /*
+    not used
     function reset() {
         // noop
     }
+    */
 
     /* Go ahead and load all of the images we know we're going to need to
      * draw our game level. Then set init as the callback method, so that when
@@ -172,8 +289,15 @@ var Engine = (function(global) {
         'images/water-block.png',
         'images/grass-block.png',
         'images/enemy-bug.png',
-        'images/char-boy.png'
-    ]);
+        'images/enemy-bug2.png',
+        'images/char-horn-girl.png',
+        'images/GemBlue.png',
+        'images/GemGreen.png',
+        'images/GemOrange.png',
+        'images/HeartRed.png',
+        'images/HeartGold.png',
+        'images/HeartPurple.png'
+    ])
     Resources.onReady(init);
 
     /* Assign the canvas' context object to the global variable (the window
